@@ -1,0 +1,70 @@
+# .github/workflows/build_installer.yml
+#
+# Builda automaticamente o instalador Windows (Instalador_HydroPump.exe)
+# numa máquina virtual Windows do GitHub Actions e o publica na aba
+# "Releases" do repositório. O desenvolvedor (Manjaro) nunca precisa ter
+# Windows para gerar o instalador: basta criar uma tag "vX.Y.Z" e enviar
+# (git push --tags), ou disparar manualmente pela aba Actions.
+
+name: Build Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}   # permite rodar manualmente pela aba Actions, sem precisar de tag
+
+permissions:
+  contents: write   # necessário para publicar em Releases
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências do projeto + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Empacotar aplicação com PyInstaller (app.spec)
+        run: pyinstaller app.spec --noconfirm --clean
+
+      - name: Verificar se a build do PyInstaller foi gerada
+        run: |
+          if (!(Test-Path "dist\HydroPumpApp\HydroPumpApp.exe")) {
+            Write-Error "Build do PyInstaller não encontrada em dist\HydroPumpApp\HydroPumpApp.exe"
+            exit 1
+          }
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compilar instalador com Inno Setup (installer.iss)
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Publicar instalador como artefato do workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: Instalador_HydroPump
+          path: installer_output\Instalador_HydroPump.exe
+
+      - name: Publicar na aba Releases (somente quando disparado por tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer_output\Instalador_HydroPump.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
