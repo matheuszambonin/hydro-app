@@ -376,7 +376,7 @@ def plot_hydro_analysis(
     ylabel: str = "Rebaixamento, $s$ (m)",
     mark_12h: bool = True,
     figsize: Tuple[float, float] = (10.5, 6.0),
-    save_path: Optional[str] = "outputs/hydro_analysis.png",
+    save_path: Optional[str] = None,
     dpi: int = 300,
 ) -> Figure:
     r"""
@@ -764,7 +764,7 @@ def plot_cooper_jacob(
     T: float,
     S: float,
     title: str = "Método de Cooper-Jacob",
-    save_path: Optional[str] = "outputs/cooper_jacob.png",
+    save_path: Optional[str] = None,
     xlabel: str = "Tempo, $t$ (min)",
     ylabel: str = "Rebaixamento corrigido, $s'$ (m)",
 ) -> Figure:
@@ -830,7 +830,7 @@ def plot_recovery_theis(
     fit_line: ArrayLike,
     T_rec: float,
     title: str = "Método de Recuperação de Theis",
-    save_path: Optional[str] = "outputs/recovery_theis.png",
+    save_path: Optional[str] = None,
     xlabel: str = "Razão de tempo, $t/t'$",
     ylabel: str = "Rebaixamento residual, $s'$ (m)",
 ) -> Figure:

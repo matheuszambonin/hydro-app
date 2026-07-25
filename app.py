@@ -22,9 +22,11 @@ import sys
 import unicodedata
 from pathlib import Path
 from typing import Optional
+import csv
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import streamlit as st
 
 # hydro_math.py e plotting.py vivem em src/, ao lado deste arquivo.
@@ -115,9 +117,31 @@ DRAWDOWN_ALIASES = ("rebaixamentom", "rebaixamento", "s", "sm", "drawdown", "dra
 
 def read_uploaded_file(file) -> pd.DataFrame:
     name = file.name.lower()
-    if name.endswith(".csv"):
-        return pd.read_csv(file)
-    return pd.read_excel(file)
+    if name.endswith((".xlsx", ".xls")):
+        return pd.read_excel(file)
+
+    # Leitura do CSV com sniffing de delimitador brasileiro
+    content = file.read()
+    file.seek(0)
+    
+    text_sample = content.decode("utf-8", errors="ignore")[:4096] if isinstance(content, bytes) else content[:4096]
+
+    try:
+        dialect = csv.Sniffer().sniff(text_sample, delimiters=";,|\t")
+        sep = dialect.delimiter
+    except Exception:
+        sep = ";" if ";" in text_sample else ","
+
+    try:
+        df = pd.read_csv(file, sep=sep, decimal=",")
+        # Se nenhuma coluna numérica for detectada, tenta com decimal de ponto "."
+        if len(df.select_dtypes(include="number").columns) == 0:
+            file.seek(0)
+            df = pd.read_csv(file, sep=sep, decimal=".")
+        return df
+    except Exception:
+        file.seek(0)
+        return pd.read_csv(file, sep=",", decimal=".")
 
 
 # --------------------------------------------------------------------------
@@ -125,8 +149,12 @@ def read_uploaded_file(file) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 st.sidebar.title("💧 Parâmetros do Ensaio")
 
+st.sidebar.subheader("📁 Cadernetas de Campo")
 uploaded_file = st.sidebar.file_uploader(
-    "Dados de Campo (CSV ou Excel)", type=["csv", "xlsx", "xls"]
+    "1. Rebaixamento (Obrigatório)", type=["csv", "xlsx", "xls"]
+)
+uploaded_file_rec = st.sidebar.file_uploader(
+    "2. Recuperação (Opcional)", type=["csv", "xlsx", "xls"]
 )
 
 st.sidebar.markdown("---")
@@ -344,6 +372,46 @@ try:
             static_level_m=NE, saturated_thickness=b,
         )
 
+## --- Análise da Fase de Recuperação (se o 2º arquivo foi enviado) ---
+    res_rec = None
+    t_ratio_plot = None
+    s2_plot = None
+    fit_line_rec = None
+
+    if uploaded_file_rec is not None:
+        try:
+            df_rec_raw = read_uploaded_file(uploaded_file_rec)
+            cols_rec = list(df_rec_raw.columns)
+            
+            col_t_rec = _detect_column(cols_rec, ("temporecmin", "temporec", "trec", "time", "tempo")) or cols_rec[0]
+            col_s_rec = _detect_column(cols_rec, ("ndrecm", "s2m", "rebaixamentoresidual", "s2", "nd", "rebaixamento")) or cols_rec[1]
+            
+            t_rec = pd.to_numeric(df_rec_raw[col_t_rec], errors="coerce").to_numpy(dtype=float)
+            s_rec_raw = pd.to_numeric(df_rec_raw[col_s_rec], errors="coerce").to_numpy(dtype=float)
+            
+            s2_m = s_rec_raw - NE if np.nanmean(s_rec_raw) > NE else s_rec_raw
+            valid_rec = np.isfinite(t_rec) & np.isfinite(s2_m) & (t_rec > 0)
+            
+            if np.count_nonzero(valid_rec) >= 3:
+                t_rec_valid = t_rec[valid_rec]
+                s2_valid = s2_m[valid_rec]
+                
+                res_rec = hm.theis_recovery_analysis(
+                    time_pump_sec=ultimo_tempo_min * 60.0,
+                    time_recovery_sec=t_rec_valid * 60.0,
+                    residual_drawdown=s2_valid,
+                    Q=Q_m3_s,
+                    saturated_thickness=b,
+                )
+                
+                # Prepara os dados para o gráfico de Theis (s'' vs t/t')
+                t_ratio_plot = (ultimo_tempo_min + t_rec_valid) / t_rec_valid
+                fit_line_rec = res_rec.delta_s_residual * np.log10(t_ratio_plot) + res_rec.intercept
+                s2_plot = s2_valid
+
+        except Exception as exc_rec:
+            st.sidebar.warning(f"Não foi possível processar a recuperação: {exc_rec}")
+
 except hm.HydroMathError as exc:
     st.error(f"Erro na análise hidrogeológica: {exc}")
     st.stop()
@@ -369,6 +437,7 @@ if df_sintetico is not None and not df_sintetico.empty:
     )
 else:
     df_unificado = df_medido.copy()
+df_unificado["tipo_dado"] = "Medido"
 
 # --------------------------------------------------------------------------
 # Abas do painel principal
@@ -382,17 +451,21 @@ with tab_graficos:
         unsafe_allow_html=True,
     )
     c2.markdown(
-        metric_card("Transmissividade, T", f"{cj.transmissivity_m2_day:.2f} m²/dia",
+        metric_card("T (Rebaixamento)", f"{cj.transmissivity_m2_day:.2f} m²/dia",
                     f"R² = {cj.r_squared:.4f}", "alt"),
         unsafe_allow_html=True,
     )
+    
+    # Exibe T_rec se a fase de recuperação tiver sido carregada
+    t_rec_str = f"{res_rec.transmissivity_m2_day:.2f} m²/dia" if res_rec else "Não carregado"
+    sub_rec_str = f"R² = {res_rec.r_squared:.4f}" if res_rec else "recuperação Theis"
     c3.markdown(
-        metric_card("Armazenamento, S", f"{cj.storativity:.2e}", "adimensional", "alt2"),
+        metric_card("T (Recuperação)", t_rec_str, sub_rec_str, "alt2"),
         unsafe_allow_html=True,
     )
+    
     c4.markdown(
-        metric_card("Rebaix. Máximo Real", f"{rebaixamento_max_real:.2f} m",
-                    f"em t = {ultimo_tempo_min:.0f} min"),
+        metric_card("Armazenamento, S", f"{cj.storativity:.2e}", "adimensional"),
         unsafe_allow_html=True,
     )
     c5.markdown(
@@ -412,6 +485,7 @@ with tab_graficos:
             show_b=b is not None,
         )
         st.pyplot(fig_esquema, use_container_width=True)
+        plt.close(fig_esquema)
 
     if eh_poco_unico:
         st.warning(
@@ -432,13 +506,22 @@ with tab_graficos:
             "ℹ️ O tempo limite da projeção já está coberto pelos dados medidos "
             "— nenhuma projeção adicional foi desenhada."
         )
-    if pct_s_max_sobre_b is not None and pct_s_max_sobre_b < 10.0:
-        st.info(
-            f"ℹ️ Aviso: O rebaixamento máximo representa apenas "
-            f"{pct_s_max_sobre_b:.1f}% de b (< 10%). A correção de Jacob terá "
-            "impacto negligenciável nos resultados de T e S — considere "
-            "dispensá-la se a espessura saturada não for bem conhecida."
-        )
+    if pct_s_max_sobre_b is not None:
+        if pct_s_max_sobre_b > 25.0:
+            st.warning(
+                f"⚠️ **Aviso de Validade Física (Jacob):** O rebaixamento máximo ({rebaixamento_max_real:.2f} m) "
+                f"corresponde a **{pct_s_max_sobre_b:.1f}%** da espessura saturada ({b:.2f} m).\n\n"
+                "Quando $s/b > 0,25$, a premissa de transmissividade constante perde a validade física "
+                "e a correção de Jacob torna-se insuficiente. O modelo recomendado para este nível de "
+                "dessaturação é Neuman ou Boulton (drenagem retardada)."
+            )
+        elif pct_s_max_sobre_b < 10.0:
+            st.info(
+                f"ℹ️ Aviso: O rebaixamento máximo representa apenas "
+                f"{pct_s_max_sobre_b:.1f}% de b (< 10%). A correção de Jacob terá "
+                "impacto negligenciável nos resultados de T e S — considere "
+                "dispensá-la se a espessura saturada não for bem conhecida."
+            )
 
     st.markdown("### Curva de Rebaixamento")
     fig = pl.plot_hydro_analysis(
@@ -447,13 +530,14 @@ with tab_graficos:
         col_t="tempo_min", col_s="rebaixamento_m", col_origem="tipo_dado",
         col_t_proj="tempo_min", col_s_proj="rebaixamento_projetado_m",
         origens_sinteticas=("sintetico", "sintético"),
-        show_projection=show_projection and not horizonte_ja_coberto,
+        show_projection=False,
         title="Análise do Teste de Bombeamento",
         Q=Q_m3_h, T=cj.transmissivity_m2_day, S=cj.storativity, r=r,
         s_12h=s_12h,
         save_path=None,
     )
     st.pyplot(fig)
+    plt.close(fig)
 
     buf_png = io.BytesIO()
     fig.savefig(buf_png, format="png", dpi=300, bbox_inches="tight")
@@ -462,6 +546,31 @@ with tab_graficos:
         "⬇️ Baixar Gráfico em Alta Resolução (PNG, 300 DPI)",
         data=buf_png, file_name="analise_bombeamento.png", mime="image/png",
     )
+
+# --- Gráfico e Análise de Recuperação de Theis ---
+    if res_rec is not None and t_ratio_plot is not None:
+        st.markdown("---")
+        st.markdown("### Curva de Recuperação de Theis (Fase de Re-enchimento)")
+        st.caption("Ajuste do rebaixamento residual $s''$ em função da razão de tempos $t/t'$.")
+
+        fig_rec = pl.plot_recovery_theis(
+            t_ratio=t_ratio_plot,
+            residual_drawdown=s2_plot,
+            fit_line=fit_line_rec,
+            T_rec=res_rec.transmissivity_m2_day,
+            title="Análise do Teste de Recuperação (Método de Theis)",
+            save_path=None,
+        )
+        st.pyplot(fig_rec)
+        plt.close(fig_rec)
+
+        buf_png_rec = io.BytesIO()
+        fig_rec.savefig(buf_png_rec, format="png", dpi=300, bbox_inches="tight")
+        buf_png_rec.seek(0)
+        st.download_button(
+            "⬇️ Baixar Gráfico de Recuperação (PNG, 300 DPI)",
+            data=buf_png_rec, file_name="recuperacao_theis.png", mime="image/png",
+        )
 
 with tab_tabela:
     st.markdown("### Dados Brutos e Calculados")
