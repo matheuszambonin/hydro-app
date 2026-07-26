@@ -1,36 +1,45 @@
-# Ambiente Python
-.venv/
-venv/
+cat > .gitignore << 'EOF'
+# Python
 __pycache__/
 *.pyc
+*.pyo
 *.egg-info/
-.eggs/
-
-# uv
-uv.lock.bak
-
-# Build / empacotamento
 dist/
 build/
-installer_output/
-*.spec.bak
+.eggs/
 
-# Testes / cobertura
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.mypy_cache/
-.ruff_cache/
+# Ambiente virtual
+venv/
+.venv/
 
-# Logs locais de execução do app empacotado
-*.log
-
-# Editor
+# IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
-# SO
+# Sistema
 .DS_Store
 Thumbs.db
+
+# Projeto
+output/
+results/
+*.log
+.streamlit/secrets.toml
+instance/
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Dados de teste
+test_data/
+*.csv~
+EOF
+
+git add .gitignore
+git commit -m "chore: adiciona .gitignore robusto"
+git push
