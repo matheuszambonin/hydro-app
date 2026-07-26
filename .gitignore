@@ -42,4 +42,6 @@ EOF
 
 git add .gitignore
 git commit -m "chore: adiciona .gitignore robusto"
-git push
+git push.coverage
+*.coverage
+htmlcov/
