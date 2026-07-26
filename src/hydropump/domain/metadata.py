@@ -82,7 +82,7 @@ class WellMetadata:
     @classmethod
     def from_geographic(
         cls, latitude: float, longitude: float, **kwargs
-    ) -> "WellMetadata":
+    ) -> WellMetadata:
         """Cria a partir de lat/lon, derivando a UTM automaticamente."""
         geo = GeographicCoordinate(latitude, longitude)
         return cls(coordinates=geo, utm=geographic_to_utm(geo), **kwargs)
@@ -95,7 +95,7 @@ class WellMetadata:
         zone: int,
         hemisphere: str = "S",
         **kwargs,
-    ) -> "WellMetadata":
+    ) -> WellMetadata:
         """Cria a partir de UTM, derivando a geográfica automaticamente."""
         utm = UTMCoordinate(easting, northing, zone, hemisphere)
         return cls(coordinates=utm_to_geographic(utm), utm=utm, **kwargs)
