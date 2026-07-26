@@ -64,8 +64,7 @@ jobs:
       - name: Instalar Inno Setup
         shell: pwsh
         run: |
-          curl -L -o is.exe https://jrsoftware.org/download.php/is.exe
-          Start-Process -FilePath ./is.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          choco install innosetup -y --no-progress
 
       - name: Compilar o instalador (.exe)
         shell: pwsh
