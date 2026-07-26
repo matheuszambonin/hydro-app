@@ -1,0 +1,36 @@
+# Ambiente Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+
+# uv
+uv.lock.bak
+
+# Build / empacotamento
+dist/
+build/
+installer_output/
+*.spec.bak
+
+# Testes / cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs locais de execução do app empacotado
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# SO
+.DS_Store
+Thumbs.db

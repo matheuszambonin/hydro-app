@@ -1,0 +1,1 @@
+"""Gráficos e diagramas científicos."""
